@@ -68,7 +68,7 @@ dispon:
 	li t0, 0x03000000
 	sw t0, 0x1814(s0)
 
-	# Paint the border
+	# Paint the image
 	la a0, gpucmdstart
 	li a1, (gpucmdend - gpucmdstart) / 4
 	jal gpuexec
@@ -329,21 +329,31 @@ uartreadbit:
 	andi v0, 0xFF
 	jr ra
 
+#
+# GPU execute commands
+#
+# Arguments:
+#  - a0: command start
+#  - a1: word count
+#  - s0: I/O start address (0x1F800000)
+#
 gpuexec:
 	beq a1, zero, gpuexecdone
 
 gpuwait:
+	# Wait until the FIFO buffer is not full
 	lw t0, 0x1814(s0)
 	li t1, 1 << 25
 	and t0, t1
 	beq t0, zero, gpuwait
 
+	# Store word, advance pointer and decrease count
 	lw t0, 0(a0)
 	addi a0, 4
 	addi a1, -1
 	sw t0, 0x1810(s0)
 
-	b gpuexec
+	bne a1, zero, gpuwait
 
 gpuexecdone:
 	jr ra
@@ -360,7 +370,7 @@ gpucmdstart:
 	# Black entire RAM
 	.word 0x02000000
 	.word COORD(  0,    0)
-	.word COORD(511, 1023)
+	.word COORD(1023, 511)
 
 	# Square around M
 	.word 0x60101010
