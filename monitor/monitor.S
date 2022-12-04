@@ -8,21 +8,82 @@
 # s0 = I/O start address (0x1F800000)
 
 __start:
-	# Restore stack pointer
-	li t0, 0x801FFF00
-	move sp, t0
-
-	# Paint dark green
-	li a0, 0x004000
-	jal paintscr
-
 	# Disable all interrupts
 	lui s0, 0x1f80
 	sw zero, 0x1074(s0)
 
+	# Restore stack pointer
+	li t0, 0x801FFF00
+	move sp, t0
+
 	# Reset joystick registers via JOY_CTRL.6
 	li t0, 0x20
 	sh t0, 0x104A(s0)
+
+	# Reset GPU with GPU1(00h)
+	move t0, zero
+	sw t0, 0x1814(s0)
+
+	# Put DMA into FIFO mode with GPU1(04h), so we can check if FIFO is full later
+	li t0, 0x04000001
+	sw t0, 0x1814(s0)
+
+	# Check if PAL - 0xBFC7FF52 should be 'E'
+	lbu t0, 0xBFC7FF52
+	li t1, 'E'
+	bne t0, t1, ntsc
+
+	# Horizontal display range with GP1(06h)
+	li t0, 0x06C7E27E
+
+	# Vertical display range with GP1(07h)
+	li t1, 0x07000000 | (169 + 264 / 2) << 10 | (169 - 264 / 2)
+
+	# PAL 15bpp 320x264 with GP1(08h)
+	li t2, 0x08000009
+
+	# Load border command address
+	la s1, palcenterstart
+
+	j dispon
+
+ntsc:
+	# Horizontal display range with GP1(06h)
+	li t0, 0x06C58258
+
+	# Vertical display range with GP1(07h)
+	li t1, 0x07000000 | (140 + 224 / 2) << 10 | (140 - 224 / 2)
+
+	# NTSC 15bpp 320x224 with GP1(08h)
+	li t2, 0x08000001
+
+	# Load border command address
+	la s1, ntsccenterstart
+
+dispon:
+	# Execute all config commands
+	sw t0, 0x1814(s0)
+	sw t1, 0x1814(s0)
+	sw t2, 0x1814(s0)
+
+	# Enable display with GP1(03h)
+	li t0, 0x03000000
+	sw t0, 0x1814(s0)
+
+	# Paint the border
+	la a0, borderstart
+	li a1, (borderend - borderstart) / 4
+	jal gpuexec
+
+	# Paint the standard-specific center
+	move a0, s1
+	li a1, (palcenterend - palcenterstart) / 4
+	jal gpuexec
+
+	# Call GPU_cwp to paint the centered M
+	la a0, drawmstart
+	li a1, (drawmend - drawmstart) / 4
+	jal gpuexec
 
 repl:
 	jal uartread
@@ -92,6 +153,10 @@ doexec:
 	# Acknowledge we're about to jump
 	li a0, '+'
 	jal uartwrite
+
+	# Flush cache
+	li t1, 0x44
+	jal 0xA0
 
 	# Jump!
 	jalr s1
@@ -276,28 +341,84 @@ uartreadbit:
 	andi v0, 0xFF
 	jr ra
 
-paintscr:
-	# Add command byte to a0
-	li t0, 0x02000000
-	or t0, a0
+gpuexec:
+	beq a1, zero, gpuexecdone
 
-	# Calculate effective address
-	la a0, redscreen
+gpuwait:
+	lw t0, 0x1814(s0)
+	li t1, 1 << 25
+	and t0, t1
+	beq t0, zero, gpuwait
 
-	# Store color with command on buffer
-	sw t0, 4(a0)
+	lw t0, 0(a0)
+	addi a0, 4
+	addi a1, -1
+	sw t0, 0x1810(s0)
 
-	# Tail call GPU_cwp to paint the entire screen
-	li a1, 4
-	li t1, 0x4A
-	j 0xA0
+	b gpuexec
 
-redscreen:
+gpuexecdone:
+	jr ra
+
+#define COORD(x, y) ((y) << 16 | (x))
+
+borderstart:
 	# Allow writing outside VSync
 	.word 0xE1000400
-	# Space for color and command
-	.word 0
-	# Start X and Y = 0
-	.word 0x00000000
-	# Width of 1024, height of 512
-	.word 0x01FF03FF
+
+	# Set drawing area bottom to 320x264
+	.word 0xE4000000 | 264 << 10 | 320
+
+	# Colorful border
+	.word 0x28202020
+	.word COORD(  0,   0)
+	.word COORD(320,   0)
+	.word COORD(  0, 264)
+	.word COORD(320, 264)
+borderend:
+
+palcenterstart:
+	# Black square in the center
+	.word 0x02000000
+	.word  20 * 0x10000 |  20
+	.word 224 * 0x10000 | 280
+
+	# Offset for M
+	.word 0xE5000000 | (264 / 2 - 80 / 2) << 11 | (320 / 2 - 80 / 2)
+palcenterend:
+
+ntsccenterstart:
+	# Black square in the center
+	.word 0x02000000
+	.word  20 * 0x10000 |  20
+	.word 184 * 0x10000 | 280
+
+	# Offset for M
+	.word 0xE5000000 | (224 / 2 - 80 / 2) << 11 | (320 / 2 - 80 / 2)
+ntsccenterend:
+
+drawmstart:
+	.word 0x28404040
+	.word COORD( 0,  0)
+	.word COORD(10,  0)
+	.word COORD( 0, 80)
+	.word COORD(10, 80)
+
+	.word 0x28404040
+	.word COORD( 0,  0)
+	.word COORD(10,  0)
+	.word COORD(35, 80)
+	.word COORD(45, 80)
+
+	.word 0x28404040
+	.word COORD(70,  0)
+	.word COORD(80,  0)
+	.word COORD(35, 80)
+	.word COORD(45, 80)
+
+	.word 0x28404040
+	.word COORD(70,  0)
+	.word COORD(80,  0)
+	.word COORD(70, 80)
+	.word COORD(80, 80)
+drawmend:
