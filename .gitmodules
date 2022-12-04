@@ -1,0 +1,5 @@
+[submodule "monitor/FreePSXBoot"]
+	path = monitor/FreePSXBoot
+	url = https://github.com/socram8888/FreePSXBoot
+[submodule "FreePSXBoot"]
+	branch = fixmemcpy
