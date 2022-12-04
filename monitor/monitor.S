@@ -42,12 +42,13 @@ __start:
 	# PAL 15bpp 320x264 with GP1(08h)
 	li t2, 0x08000009
 
-	# Load border command address
-	la s1, palcenterstart
-
 	j dispon
 
 ntsc:
+	# Center the NTSC viewport in the PAL-sized drawing area using GP1(05h)
+	li t0, 0x05000000 | ((264 - 224) / 2) << 10
+	sw t0, 0x1814(s0)
+
 	# Horizontal display range with GP1(06h)
 	li t0, 0x06C58258
 
@@ -56,9 +57,6 @@ ntsc:
 
 	# NTSC 15bpp 320x224 with GP1(08h)
 	li t2, 0x08000001
-
-	# Load border command address
-	la s1, ntsccenterstart
 
 dispon:
 	# Execute all config commands
@@ -71,18 +69,8 @@ dispon:
 	sw t0, 0x1814(s0)
 
 	# Paint the border
-	la a0, borderstart
-	li a1, (borderend - borderstart) / 4
-	jal gpuexec
-
-	# Paint the standard-specific center
-	move a0, s1
-	li a1, (palcenterend - palcenterstart) / 4
-	jal gpuexec
-
-	# Call GPU_cwp to paint the centered M
-	la a0, drawmstart
-	li a1, (drawmend - drawmstart) / 4
+	la a0, gpucmdstart
+	li a1, (gpucmdend - gpucmdstart) / 4
 	jal gpuexec
 
 repl:
@@ -360,65 +348,65 @@ gpuwait:
 gpuexecdone:
 	jr ra
 
-#define COORD(x, y) ((y) << 16 | (x))
-
-borderstart:
+gpucmdstart:
 	# Allow writing outside VSync
 	.word 0xE1000400
 
 	# Set drawing area bottom to 320x264
 	.word 0xE4000000 | 264 << 10 | 320
 
-	# Colorful border
+#define COORD(x, y) ((y) << 16 | (x))
+
+	# Black entire RAM
+	.word 0x02000000
+	.word COORD(  0,    0)
+	.word COORD(511, 1023)
+
+	# Square around M
+	.word 0x60101010
+	.word COORD(85, 75)
+	.word COORD(320 - 85 - 85, 264 - 75 - 75)
+
+	.word 0x60000000
+	.word COORD(90, 80)
+	.word COORD(320 - 90 - 90, 264 - 80 - 80)
+
+#undef COORD
+
+#define XOFF (320 / 2 - 80 / 2)
+#define YOFF (264 / 2 - 80 / 2)
+#define COORD(x, y) ((y) + YOFF) << 16 | ((x) + XOFF)
+
+	# Left bar of the M
 	.word 0x28202020
-	.word COORD(  0,   0)
-	.word COORD(320,   0)
-	.word COORD(  0, 264)
-	.word COORD(320, 264)
-borderend:
-
-palcenterstart:
-	# Black square in the center
-	.word 0x02000000
-	.word  20 * 0x10000 |  20
-	.word 224 * 0x10000 | 280
-
-	# Offset for M
-	.word 0xE5000000 | (264 / 2 - 80 / 2) << 11 | (320 / 2 - 80 / 2)
-palcenterend:
-
-ntsccenterstart:
-	# Black square in the center
-	.word 0x02000000
-	.word  20 * 0x10000 |  20
-	.word 184 * 0x10000 | 280
-
-	# Offset for M
-	.word 0xE5000000 | (224 / 2 - 80 / 2) << 11 | (320 / 2 - 80 / 2)
-ntsccenterend:
-
-drawmstart:
-	.word 0x28404040
 	.word COORD( 0,  0)
 	.word COORD(10,  0)
 	.word COORD( 0, 80)
 	.word COORD(10, 80)
 
-	.word 0x28404040
+	# \ of the M
+	.word 0x28202020
 	.word COORD( 0,  0)
 	.word COORD(10,  0)
 	.word COORD(35, 80)
 	.word COORD(45, 80)
 
-	.word 0x28404040
+	# / of the M
+	.word 0x28202020
 	.word COORD(70,  0)
 	.word COORD(80,  0)
 	.word COORD(35, 80)
 	.word COORD(45, 80)
 
-	.word 0x28404040
+	# Right bar of the M
+	.word 0x28202020
 	.word COORD(70,  0)
 	.word COORD(80,  0)
 	.word COORD(70, 80)
 	.word COORD(80, 80)
-drawmend:
+
+#undef XOFF
+#undef YOFF
+#undef COORD
+
+gpucmdend:
