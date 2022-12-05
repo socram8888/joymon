@@ -220,9 +220,16 @@ if __name__ == '__main__':
 
 	parser = argparse.ArgumentParser(description='PS1 monitor load tool')
 	parser.add_argument('port', help='COM port')
-	parser.add_argument('exe', help='PSX executable path')
+	parser.add_argument('exe', help='PSX executable path', nargs='?')
 	args = parser.parse_args()
 
-	t = PSMonitor(args.port)
-	t.wait_for_ready()
-	t.execute(args.exe)
+	m = PSMonitor(args.port)
+	print('Waiting for console...')
+	m.wait_for_ready()
+	if args.exe:
+		print('Executing ' + args.exe)
+		m.execute(args.exe)
+	else:
+		print('Dropping into REPL. Monitor is "m".')
+		import code
+		code.interact(local=locals())
