@@ -5,12 +5,12 @@
 .globl __start
 
 # Fixed-valued registers:
-# s0 = I/O start address (0x1F800000)
+# gp = I/O start address (0x1F800000)
 
 __start:
 	# Disable all interrupts
-	lui s0, 0x1f80
-	sw zero, 0x1074(s0)
+	lui gp, 0x1f80
+	sw zero, 0x1074(gp)
 
 	# Restore stack pointer
 	li t0, 0x801FFF00
@@ -18,15 +18,15 @@ __start:
 
 	# Reset joystick registers via JOY_CTRL.6
 	li t0, 0x20
-	sh t0, 0x104A(s0)
+	sh t0, 0x104A(gp)
 
 	# Reset GPU with GPU1(00h)
 	move t0, zero
-	sw t0, 0x1814(s0)
+	sw t0, 0x1814(gp)
 
 	# Put DMA into FIFO mode with GPU1(04h), so we can check if FIFO is full later
 	li t0, 0x04000001
-	sw t0, 0x1814(s0)
+	sw t0, 0x1814(gp)
 
 	# Check if PAL - 0xBFC7FF52 should be 'E'
 	lbu t0, 0xBFC7FF52
@@ -47,7 +47,7 @@ __start:
 ntsc:
 	# Center the NTSC viewport in the PAL-sized drawing area using GP1(05h)
 	li t0, 0x05000000 | ((264 - 224) / 2) << 10
-	sw t0, 0x1814(s0)
+	sw t0, 0x1814(gp)
 
 	# Horizontal display range with GP1(06h)
 	li t0, 0x06C58258
@@ -60,13 +60,13 @@ ntsc:
 
 dispon:
 	# Execute all config commands
-	sw t0, 0x1814(s0)
-	sw t1, 0x1814(s0)
-	sw t2, 0x1814(s0)
+	sw t0, 0x1814(gp)
+	sw t1, 0x1814(gp)
+	sw t2, 0x1814(gp)
 
 	# Enable display with GP1(03h)
 	li t0, 0x03000000
-	sw t0, 0x1814(s0)
+	sw t0, 0x1814(gp)
 
 	# Paint the image
 	la a0, gpucmdstart
@@ -190,7 +190,6 @@ readaddr:
 #
 # Arguments:
 #  - a0: byte to send
-#  - s0: I/O start address (0x1F800000)
 #
 uartwrite:
 	# Add start (0) and stop (1) bits to byte
@@ -203,7 +202,7 @@ uartwrite:
 
 	# Set timer 0 target to 293 cycles (33868800Hz/115200bps-1)
 	li t0, 293
-	sw t0, 0x1108(s0)
+	sw t0, 0x1108(gp)
 
 	# Start timer 0 in:
 	# - Source clock to SysClk (33868800Hz)
@@ -219,7 +218,7 @@ uartwrite:
 	# Also note that although we are using the IRQ bits, interrupts are actually disabled so
 	# we will busy poll the corresponding bits.
 	li t0, 0x04D8
-	sw t0, 0x1104(s0)
+	sw t0, 0x1104(gp)
 
 	# Current timer IRQ flag status
 	li t2, 0x0400
@@ -231,7 +230,7 @@ uartwritebit:
 	andi t0, a0, 1
 	sll t0, 13
 	xori t0, 0x2002
-	sh t0, 0x104A(s0)
+	sh t0, 0x104A(gp)
 
 	# Shift right current buffer
 	srl a0, 1
@@ -241,7 +240,7 @@ uartwritebit:
 
 	# Wait until the interrupt flag toggles
 uartwritewait:
-	lw t0, 0x1104(s0)
+	lw t0, 0x1104(gp)
 	andi t0, 0x0400
 	beq t0, t2, uartwritewait
 
@@ -256,35 +255,32 @@ uartwritewait:
 #
 # UART READ
 #
-# Arguments:
-#  - s0: I/O start address (0x1F800000)
-#
 # Returns:
 #  - v0: read byte
 #
 uartread:
 	# Wait for /ACK to go low (start bit)
-	lh t0, 0x1044(s0)
+	lh t0, 0x1044(gp)
 	andi t0, 0x0080
 	beq t0, zero, uartread
 
 	# Set timer 0 target to half a bit, so we start sampling in the middle
 	li t0, 146
-	sw t0, 0x1108(s0)
+	sw t0, 0x1108(gp)
 
 	# Start timer 0. See uartwrite for a rationale of this value.
 	li t0, 0x04D8
-	sw t0, 0x1104(s0)
+	sw t0, 0x1104(gp)
 
 	# Wait until the IRQ flag toggles low
 uartreadwaitmiddle:
-	lw t0, 0x1104(s0)
+	lw t0, 0x1104(gp)
 	andi t0, 0x0400
 	bne t0, zero, uartreadwaitmiddle
 
 	# Load real delay
 	li t0, 293
-	sw t0, 0x1108(s0)
+	sw t0, 0x1108(gp)
 
 	# Read value
 	move v0, zero
@@ -297,7 +293,7 @@ uartreadwaitmiddle:
 
 	# Wait until it reaches the target
 uartreadbit:
-	lw t0, 0x1104(s0)
+	lw t0, 0x1104(gp)
 	andi t0, 0x0400
 	beq t0, t2, uartreadbit
 
@@ -305,7 +301,7 @@ uartreadbit:
 	move t2, t0
 
 	# Read /ACK
-	lh t0, 0x1044(s0)
+	lh t0, 0x1044(gp)
 
 	# Shift right current buffer
 	srl v0, 1
@@ -335,14 +331,13 @@ uartreadbit:
 # Arguments:
 #  - a0: command start
 #  - a1: word count
-#  - s0: I/O start address (0x1F800000)
 #
 gpuexec:
 	beq a1, zero, gpuexecdone
 
 gpuwait:
 	# Wait until the FIFO buffer is not full
-	lw t0, 0x1814(s0)
+	lw t0, 0x1814(gp)
 	li t1, 1 << 25
 	and t0, t1
 	beq t0, zero, gpuwait
@@ -351,7 +346,7 @@ gpuwait:
 	lw t0, 0(a0)
 	addi a0, 4
 	addi a1, -1
-	sw t0, 0x1810(s0)
+	sw t0, 0x1810(gp)
 
 	bne a1, zero, gpuwait
 
