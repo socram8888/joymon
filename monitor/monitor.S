@@ -90,42 +90,50 @@ repl:
 	jal uartwrite
 	j repl
 
+#
+# Processes a read request
+#
 doread:
 	jal readaddr
+	move s0, v0
 
 	# Read length
 	jal uartread
 
 	# Compute end of read
-	add s2, s1, v0
+	add s1, s0, v0
 
 	# Report command OK
 	li a0, '+'
 	jal uartwrite
 
 readloop:
-	beq s1, s2, repl
-	lbu a0, 0(s1)
+	beq s0, s1, repl
+	lbu a0, 0(s0)
 	jal uartwrite
 
-	addi s1, 1
+	addi s0, 1
 	j readloop
 
+#
+# Processes a write request
+#
 dowrite:
 	jal readaddr
+	move s0, v0
 
 	# Read length
 	jal uartread
 
 	# Compute end of write
-	add s2, s1, v0
+	add s1, s0, v0
 
 writeloop:
-	beq s1, s2, writedone
+	beq s0, s1, writedone
 	jal uartread
-	sb v0, 0(s1)
+	sb v0, 0(s0)
 
-	addi s1, 1
+	addi s0, 1
 	j writeloop
 
 writedone:
@@ -135,8 +143,14 @@ writedone:
 
 	j repl
 
+#
+# Processes an execution request
+#
+# Does not return
+#
 doexec:
 	jal readaddr
+	move s0, v0
 
 	# Acknowledge we're about to jump
 	li a0, '+'
@@ -147,7 +161,7 @@ doexec:
 	jal 0xA0
 
 	# Jump!
-	jalr s1
+	jalr s0
 
 	# Run from start
 	j __start
@@ -155,33 +169,34 @@ doexec:
 #
 # Read an address from UART
 #
-# Returns:
-#  - s1: address
+# Returns: address
 #
 readaddr:
-	addi sp, -4
-	sw ra, 0(sp)
+	addi sp, -24
+	sw ra, 20(sp)
+	sw s0, 16(sp)
 
 	# Read first 8 bits
 	jal uartread
-	sll s1, v0, 24
+	sll s0, v0, 24
 
 	# Read second 8 bits
 	jal uartread
 	sll v0, 16
-	or s1, v0
+	or s0, v0
 
 	# Read third 8 bits
 	jal uartread
 	sll v0, 8
-	or s1, v0
+	or s0, v0
 
 	# Read last 8 bits
 	jal uartread
-	or s1, v0
+	or v0, s0
 
-	lw ra, 0(sp)
-	addi sp, 4
+	lw s0, 16(sp)
+	lw ra, 20(sp)
+	addi sp, 24
 
 	jr ra
 
@@ -255,8 +270,7 @@ uartwritewait:
 #
 # UART READ
 #
-# Returns:
-#  - v0: read byte
+# Returns: read byte
 #
 uartread:
 	# Wait for /ACK to go low (start bit)
