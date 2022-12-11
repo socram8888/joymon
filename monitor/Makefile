@@ -1,16 +1,27 @@
 
 # Thanks to whoever made https://devhints.io/makefile!
 
-CC=mips-linux-gnu-gcc
-CFLAGS=-O1 -Wall -Wextra -EL -march=r3000 -mfp32 -mno-abicalls -fno-pic
+CC := $(shell which mips-linux-gnu-gcc mips-linux-gnu-gcc-10 mips-linux-gnu-gcc-11 mips-linux-gnu-gcc-12 | head -n 1)
+CFLAGS = -Os -Wall -Wextra -EL -march=r3000 -mfp32 -mno-abicalls -fno-pic
 
-LD=mips-linux-gnu-ld
+ifeq ($(CC),)
+    $(error Cannot find MIPS GCC compiler)
+endif
+
+LD := mips-linux-gnu-ld
+
+MONITOR_OBJECTS := $(patsubst %.S, %.o, $(wildcard *.S))
 
 all: monitor.exe monitor.bin monitor.cue monitor-scph102.mcd
 
-monitor.exe: monitor.S monitor.ld
-	$(CC) $(CFLAGS) -c monitor.S
-	$(LD) -T monitor.ld monitor.o -o monitor.exe
+%.o: %.S
+	$(CC) $(CFLAGS) -c $<
+
+monitor.elf: $(MONITOR_OBJECTS)
+	$(LD) -EL $(MONITOR_OBJECTS) -o monitor.elf
+
+monitor.exe: monitor.ld monitor.elf
+	$(LD) -T monitor.ld monitor.elf -o monitor.exe
 
 monitor.bin monitor.cue: monitor.exe system.cnf cd.xml licensee.dat
 	mkpsxiso -y cd.xml
