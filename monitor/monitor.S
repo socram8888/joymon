@@ -201,6 +201,100 @@ readaddr:
 	jr ra
 
 #
+# Send from a buffer to UART
+#
+# Arguments:
+#  - a0: buffer
+#  - a1: length
+#
+uartsendbuf:
+	# Early exit if zero
+	beq a1, zero, uartsendbufra
+
+	# Save registers
+	addi sp, -28
+	sw ra, 24(sp)
+	sw s1, 20(sp)
+	sw s0, 16(sp)
+
+	# Save current address and calculate end address
+	move s0, a0
+	addi s1, a0, a1
+
+uartsendbufnext:
+	# Load byte and send straight away
+	lbu a0, 0(s0)
+	jal uartwrite
+
+	# Increment counter and continue if not done
+	addi s0, 1
+	bne s0, s1, uartsendbufnext
+
+	# Load saved registers
+	lw s0, 16(sp)
+	lw s1, 20(sp)
+	lw ra, 24(sp)
+	addi sp, 28
+
+uartsendbufra:
+	jr ra
+
+#
+# Receives from UART into a buffer
+#
+# Arguments:
+#  - a0: buffer
+#  - a1: length
+# Returns: 1 if received, 0 if a reception error occured
+#
+uartrecvbuf:
+	# Early exit if zero
+	li v0, 1
+	beq a1, zero, uartrecvbufra
+
+	# Save registers
+	addi sp, -28
+	sw ra, 24(sp)
+	sw s1, 20(sp)
+	sw s0, 16(sp)
+
+	# Save current address and calculate end address
+	move s0, a0
+	addi s1, a0, a1
+
+uartrecvbufnext:
+	# Read byte
+	jal uartread
+
+	# If value is not negative, it was received okay
+	bgez v0, uartrecvbufok
+
+	# Load fail value and return
+	li v0, 0
+	b uartrecvbufret
+
+uartrecvbufok:
+	# Save read byte
+	sb v0, 0(s0)
+
+	# Increment pointer
+	addi s0, 1
+
+	# Do next iteration if not done - else fall through with v0 to 1
+	li v0, 1
+	bne s0, s1, uartrecvbufnext
+
+uartrecvbufret:
+	# Load saved registers
+	lw s0, 16(sp)
+	lw s1, 20(sp)
+	lw ra, 24(sp)
+	addi sp, 28
+
+uartrecvbufra:
+	jr ra
+
+#
 # UART WRITE
 #
 # Arguments:
